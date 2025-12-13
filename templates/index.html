@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Weather App</title>
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="header-block">
+        <h1>Awesome Weather App</h1>
+        <!--style for enter city name-->
+        <form method="get" action="/">
+            <input type="text" name="city" placeholder="Enter city" required>
+            <button type="submit">Get Weather</button>
+        </form>
+
+        <form action="/download-sky" method="get" style="margin-top:10px;">
+            <button type="submit">Download Sky Image</button>
+        </form>
+
+        {% if weather_data %}
+        <form method="post" action="/save-weather" style="margin-top:10px;">
+            <input type="hidden" name="city" value="{{ city }}">
+            <input type="hidden" name="country" value="{{ country }}">
+            <input type="hidden" name="forecast" value='{{ forecast | tojson }}'>
+            <button type="submit">Save to DynamoDB</button>
+        </form>
+        {% endif %}
+    </div>
+
+    <!--display error message if error-->
+    {% if error_message %}
+    <div class="error">{{ error_message }}</div>
+    {% endif%}
+    <!--display 7-day forecast-->
+    {% if weather_data %}
+    <div class="result">
+        <h2>Weakly Forecast for {{ city }}{% if country %}, {{ country }}{% endif %}</h2>
+    </div>
+        <table>
+
+            <tr>
+                <!--date headers-->
+                <th>Metrics</th>
+                {% for i in range(weather_data.time|length) %}
+                    <th>{{ weather_data.time[i] }}</th>
+                {% endfor %}
+            </tr>
+
+            <tr>
+                <!--day temperature-->
+                <td>Day Temperature (°C) ☀️</td>
+                {% for i in range(weather_data.time|length) %}
+                  <td>
+                      {{ weather_data.temperature_2m_max[i] }}
+                      {% if weather_data.temperature_2m_max[i] >= 30 %}🔥
+                      {% elif weather_data.temperature_2m_max[i] >= 20 %}☀️
+                      {% elif weather_data.temperature_2m_max[i] >= 10 %}⛅
+                      {% else %}🥶
+                      {% endif%}
+                  </td>
+                {% endfor %}
+            </tr>
+
+            <tr>
+                <td>Night Temperature (°C) 🌙</td>
+                {% for i in range(weather_data.time|length) %}
+                  <td>
+                      {{ weather_data.temperature_2m_min[i] }}
+                      {% if weather_data.temperature_2m_min[i] >= 20 %}🔥
+                      {% elif weather_data.temperature_2m_min[i] >= 10 %}🌡️
+                      {% else %}🥶
+                      {% endif%}
+                  </td>
+                {% endfor %}
+            </tr>
+
+            <tr>
+                <td>Humidity (%) 💧</td>
+                {% for i in range(weather_data.time|length) %}
+                  <td>
+                      {{ weather_data.relative_humidity_2m_mean[i] }}
+                      {% if weather_data.relative_humidity_2m_mean[i] >= 80 %}🥵
+                      {% elif weather_data.relative_humidity_2m_mean[i] >= 50 %}💦
+                      {% elif weather_data.relative_humidity_2m_mean[i] >= 30 %}💧
+                      {% else %}🌵
+                      {% endif%}
+                  </td>
+                {% endfor %}
+            </tr>
+
+            <tr>
+                <td>Sunrise</td>
+                {% for i in range(weather_data.time|length) %}
+                  <td>
+                      {{ weather_data.sunrise[i].split('T')[1][:5] }}
+                  </td>
+                {% endfor %}
+            </tr>
+
+        </table>
+    {% endif%}
+</body>
+</html>
