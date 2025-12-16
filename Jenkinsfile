@@ -2,14 +2,12 @@ pipeline {
     agent { label 'bare-metal-agent' }
 
     environment {
-        GITLAB_CREDENTIALS = 'git-lab-key'
-        GITLAB_URL = 'ssh://git@git.helen-tam.org:2222/root/weather.git'
+        GITLAB_CREDENTIALS = 'gitlab-project-token'
+        GITLAB_URL = 'ssh://git@gitlab.helen-tam.org:2222/root/weather-app.git'
 
         DOCKER_IMAGE_TAG = 'helentam93/weather-app'
         DOCKER_HUB_CREDENTIALS = 'dockerhub-creds'
 
-        TARGET_EC2 = 'ubuntu@51.21.232.104'
-        DEPLOY_SSH_CREDENTIALS = 'deploy-server'
     }
 
     stages {
