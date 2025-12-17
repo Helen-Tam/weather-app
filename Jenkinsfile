@@ -50,7 +50,7 @@ spec:
     }
 
     environment {
-        GITLAB_URL = 'http://10.0.3.117/root/weather.git' // replace with actual private IP
+        GITLAB_URL = 'https://gitlab.helen-tam.org/root/weather.git' // replace with actual private IP
         DOCKER_IMAGE_TAG = "helentam93/weather:${BUILD_NUMBER}"
         DOCKER_HUB_CREDENTIALS = 'dockerhub-creds'
     }
@@ -63,8 +63,6 @@ spec:
                 echo 'Cloning repository from GitLab...'
                 checkout([$class: 'GitSCM',
                     branches: [[name: 'main']],
-                    doGenerateSubmoduleConfigurations: false,
-                    extensions: [],
                     userRemoteConfigs: [[
                         url: "${env.GITLAB_URL}",
                         credentialsId: 'gitlab-deploy-token'
