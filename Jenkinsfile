@@ -51,7 +51,7 @@ spec:
 
     environment {
         GITLAB_CREDENTIALS = 'gitlab-deploy-token'
-        GITLAB_URL = 'http://10.0.3.117/root/weather.git' // replace with actual private IP
+        GITLAB_URL = 'https://gitlab.helen-tam.org/root/weather.git' // replace with actual private IP
         DOCKER_IMAGE_TAG = "helentam93/weather:${BUILD_NUMBER}"
         DOCKER_HUB_CREDENTIALS = 'dockerhub-creds'
     }
