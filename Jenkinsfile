@@ -57,7 +57,7 @@ spec:
 
 
 
-
+    stages {
         stage('Clone Repo') {
             steps {
                 echo 'Cloning repository from GitLab...'
