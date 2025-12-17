@@ -131,7 +131,9 @@ spec:
                         def APP_VERSION = "1.0.${env.BUILD_NUMBER}"
                         sh """
                             echo "Updating weather-app chart to version ${APP_VERSION}"
+                            ls -l weather-app/
                             sed -i "s/^appVersion:.*/appVersion: ${APP_VERSION}/" weather-app/Chart.yaml
+                            sed -i "s/^version:.*/version: ${APP_VERSION}/" weather-app/Chart.yaml
 
                             # Push the changes bask to the repository
                             git config user.name "root"
