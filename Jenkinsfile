@@ -63,6 +63,7 @@ spec:
                 echo 'Cloning repository from GitLab...'
                 git branch: 'main',
                     url: "${env.GITLAB_URL}"
+                    credentialsId: 'gitlab-deploy-token'
             }
         }
 
