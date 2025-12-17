@@ -1,12 +1,16 @@
 # base image for Flask application
-FROM python:3.6-slim
+FROM python:3.11-slim
 
 # set working directory
 WORKDIR /app
 
 # copy requirements and install dependencies first (leveraging Docker cache)
 COPY requirements.txt .
+
+# upgrade pip to latest version
 RUN python -m pip install --upgrade pip
+
+# install all Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # copy the rest of the app
