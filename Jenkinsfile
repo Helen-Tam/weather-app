@@ -57,6 +57,22 @@ spec:
     }
 
     stages {
+       stage('Debug Git Auth') {
+           steps {
+              withCredentials([usernamePassword(
+                  credentialsId: 'gitlab-deploy-token',
+                  usernameVariable: 'GIT_USER',
+                  passwordVariable: 'GIT_TOKEN'
+              )]) {
+                  sh '''
+                  echo "Testing git authentication..."
+                  git ls-remote https://$GIT_USER:$GIT_TOKEN@gitlab.helen-tam.org/root/weather.git
+                  '''
+           }
+       }
+    }
+
+
         stage('Clone Repo') {
             steps {
                 echo 'Cloning repository from GitLab...'
