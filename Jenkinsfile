@@ -50,34 +50,18 @@ spec:
     }
 
     environment {
-        GITLAB_CREDENTIALS = 'gitlab-deploy-token'
-        GITLAB_URL = 'https://gitlab.helen-tam.org/root/weather.git' // replace with actual private IP
+        GITLAB_URL = 'http://10.0.3.117/root/weather.git' // replace with actual private IP
         DOCKER_IMAGE_TAG = "helentam93/weather:${BUILD_NUMBER}"
         DOCKER_HUB_CREDENTIALS = 'dockerhub-creds'
     }
 
-    stages {
-       stage('Debug Git Auth') {
-           steps {
-              withCredentials([usernamePassword(
-                  credentialsId: 'gitlab-deploy-token',
-                  usernameVariable: 'GIT_USER',
-                  passwordVariable: 'GIT_TOKEN'
-              )]) {
-                  sh '''
-                  echo "Testing git authentication..."
-                  git ls-remote https://$GIT_USER:$GIT_TOKEN@gitlab.helen-tam.org/root/weather.git
-                  '''
-           }
-       }
-    }
+
 
 
         stage('Clone Repo') {
             steps {
                 echo 'Cloning repository from GitLab...'
                 git branch: 'main',
-                    credentialsId: "${env.GITLAB_CREDENTIALS}",
                     url: "${env.GITLAB_URL}"
             }
         }
