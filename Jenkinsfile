@@ -129,7 +129,8 @@ spec:
                 container('jnlp') {
                     script {
                         def APP_VERSION = "1.0.${env.BUILD_NUMBER}"
-                        sh """
+                        withCredentials([usernamePassword(credentialsId: 'gitlab-deploy-token', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
+                          sh """
                             echo "Updating weather-app chart to version ${APP_VERSION}"
                             ls -l weather-app/
                             sed -i "s/^appVersion:.*/appVersion: ${APP_VERSION}/" weather-app/Chart.yaml
@@ -140,8 +141,9 @@ spec:
                             git config user.email "gitlab_admin_a6409f@example.com"
                             git add weather-app/Chart.yaml
                             git commit -m "Update weather-app chart to version ${APP_VERSION}" || echo "No changes to commit"
-                            git push origin HEAD:main || echo "Push failed"
+                            git push https://$GIT_USER:$GIT_TOKEN@gitlab.helen-tam.org/root/weather-app.git HEAD:main
                         """
+                       }
                     }
                 }
             }
