@@ -123,6 +123,27 @@ spec:
                 }
             }
         }
+
+        stage('Update APP version in the Helm Chart') {
+            steps {
+                container('jnlp') {
+                    script {
+                        def APP_VERSION = "1.0.${env.BUILD_NUMBER}"
+                        sh """
+                            echo "Updating weather-app chart to version ${APP_VERSION}"
+                            sed -i "s/^appVersion:.*/appVersion: ${APP_VERSION}/" weather-app/Chart.yaml}
+
+                            # Push the changes bask to the repository
+                            git config user.name "root"
+                            git config user.email "gitlab_admin_a6409f@example.com"
+                            git add weather-app/Chart.yaml
+                            git commit -m "Update weather-app chart to version ${APP_VERSION}" || echo "No changes to commit"
+                            git push origin main || echo "Push failed"
+                        """
+                    }
+                }
+            }
+        }
     }
 
 
