@@ -105,8 +105,22 @@ spec:
                             docker rm -f temp-test-container
 
                             """
-
                     }
+                }
+            }
+        }
+    }
+
+    stage('Push to DockerHub') {
+        steps {
+            container('docker') {
+                withCredentials([usernamePassword(credentialsId: "${DOCKER_HUB_CREDENTIALS}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh """
+                        echo "Logging into Docker Hub..."
+                        echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
+                        echo "Pushing Docker image ${DOCKER_IMAGE_TAG}..."
+                        docker push ${DOCKER_IMAGE_TAG}
+                    """
                 }
             }
         }
