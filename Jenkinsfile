@@ -61,9 +61,15 @@ spec:
         stage('Clone Repo') {
             steps {
                 echo 'Cloning repository from GitLab...'
-                git branch: 'main',
-                    url: "${env.GITLAB_URL}"
-                    credentialsId: 'gitlab-deploy-token'
+                checkout([$class: 'GitSCM',
+                    branches: [[name: 'main']],
+                    doGenerateSubmoduleConfigurations: false,
+                    extensions: [],
+                    userRemoteConfigs: [[
+                        url: "${env.GITLAB_URL}",
+                        credentialsId: 'gitlab-deploy-token'
+                    ]]
+                ])
             }
         }
 
