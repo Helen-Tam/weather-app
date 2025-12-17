@@ -64,8 +64,7 @@ spec:
                 checkout([$class: 'GitSCM',
                     branches: [[name: 'main']],
                     userRemoteConfigs: [[
-                        url: "${env.GITLAB_URL}",
-                        credentialsId: 'gitlab-deploy-token'
+                        url: "${env.GITLAB_URL}"
                     ]]
                 ])
             }
