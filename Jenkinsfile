@@ -90,15 +90,14 @@ spec:
                             echo "Building Docker image..."
                             docker build -t ${DOCKER_IMAGE_TAG} .
 
+                            echo "Installing curl..."
+                            apk add --no-cache curl
+
                             echo "Testing Docker image reachability..."
                             # Start a container in detached mode
-                            docker run -d --name temp-test-container -p 5000:5000 ${DOCKER_IMAGE_TAG}
-
-                            # Wait for the app to start
+                            docker run -d --name temp-test-container -p 8000:8000 ${DOCKER_IMAGE_TAG}
                             sleep 5
-
-                            # Reachability test
-                            curl -f http://localhost:5000 || { echo "Reachability test FAILED"; docker logs temp-test-container; docker rm -f temp-test-container; exit 1; }
+                            curl -f http://localhost:8000 || { echo "Reachability test FAILED"; docker logs temp-test-container; docker rm -f temp-test-container; exit 1; }
 
                             echo "Reachability test SUCCESS"
 
