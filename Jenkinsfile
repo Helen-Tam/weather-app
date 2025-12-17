@@ -79,7 +79,7 @@ spec:
             }
         }
 
-        stage('Login to Docker Hub and Build Image') {
+        stage('Build and Test Docker Image') {
             steps {
                 container('docker') {
                     script {
@@ -90,6 +90,21 @@ spec:
                             echo "Building Docker image..."
                             docker build -t ${DOCKER_IMAGE_TAG} .
 
+                            echo "Testing Docker image reachability..."
+                            # Start a container in detached mode
+                            docker run -d --name temp-test-container -p 5000:5000 ${DOCKER_IMAGE_TAG}
+
+                            # Wait for the app to start
+                            sleep 5
+
+                            # Reachability test
+                            curl -f http://localhost:5000 || { echo "Reachability test FAILED"; docker logs temp-test-container; docker rm -f temp-test-container; exit 1; }
+
+                            echo "Reachability test SUCCESS"
+
+                            # Stop and remove the test container
+                            docker rm -f temp-test-container
+
                             """
 
                     }
@@ -97,31 +112,7 @@ spec:
             }
         }
     }
-/*     stage('Login to Docker Hub and Build Image') {
-            steps {
-                container('docker') {
-                    withCredentials([usernamePassword(
-                        credentialsId: "${env.DOCKER_HUB_CREDENTIALS}",
-                        usernameVariable: 'DOCKER_USER',
-                        passwordVariable: 'DOCKER_PASS'
-                    )]) {
-                        dir('/home/jenkins/agent') {
-                            sh """
-                            echo "Waiting for Docker daemon..."
-                            until docker info >/dev/null 2>&1; do sleep 2; done
-                            echo "Logging into Docker Hub..."
-                            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-                            echo "Building Docker image..."
-                            docker build -t ${DOCKER_IMAGE_TAG} .
-                            echo "Pushing Docker image..."
-                            docker push ${DOCKER_IMAGE_TAG}
-                            """
-                        }
-                    }
-                }
-            }
-        }
-    } */
+
 
     post {
         always {
