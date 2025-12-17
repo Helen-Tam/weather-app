@@ -59,12 +59,13 @@ spec:
 
     stages {
         stage('Clone Repo') {
-          container('jnlp') {
+
             steps {
+              container('jnlp') {
                 echo 'Cloning repository from GitLab...'
                 checkout scm
+              }
             }
-          }
         }
 
         stage('Pylint Check') {
