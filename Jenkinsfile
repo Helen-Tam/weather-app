@@ -140,7 +140,7 @@ spec:
                             git config user.email "gitlab_admin_a6409f@example.com"
                             git add weather-app/Chart.yaml
                             git commit -m "Update weather-app chart to version ${APP_VERSION}" || echo "No changes to commit"
-                            git push origin main || echo "Push failed"
+                            git push origin HEAD:main || echo "Push failed"
                         """
                     }
                 }
