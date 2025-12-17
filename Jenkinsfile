@@ -20,6 +20,9 @@ spec:
 
   - name: pylint-agent
     image: idandror/jenkins-agent:latest
+    command:
+      - cat
+    tty: true
     volumeMounts:
       - name: workspace-volume
         mountPath: /home/jenkins/agent
