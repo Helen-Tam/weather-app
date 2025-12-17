@@ -59,15 +59,12 @@ spec:
 
     stages {
         stage('Clone Repo') {
+          container('jnlp') {
             steps {
                 echo 'Cloning repository from GitLab...'
-                checkout([$class: 'GitSCM',
-                    branches: [[name: 'main']],
-                    userRemoteConfigs: [[
-                        url: "${env.GITLAB_URL}"
-                    ]]
-                ])
+                checkout scm
             }
+          }
         }
 
         stage('Pylint Check') {
