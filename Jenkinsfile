@@ -1,13 +1,56 @@
 pipeline {
-    agent { label 'bare-metal-agent' }
+    agent {
+        kubernetes {
+            label 'jenkins-agent'
+            defaultContainer 'jnlp'
+            yaml '''
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app: jenkins-docker-agent
+spec:
+  containers:
+  - name: jnlp
+    image: jenkins/inbound-agent:lts
+    args: ['$(JENKINS_SECRET)', '$(JENKINS_NAME)']
+    volumeMounts:
+      - name: workspace-volume
+        mountPath: /home/jenkins/agent
+
+  - name: pylint-agent
+    image: idandror/jenkins-agent:latest
+    volumeMounts:
+      - name: workspace-volume
+        mountPath: /home/jenkins/agent
+
+  - name: docker
+    image: docker:24-dind
+    securityContext:
+      privileged: true
+    env:
+      - name: DOCKER_TLS_CERTDIR
+        value: ""
+    volumeMounts:
+      - name: docker-graph
+        mountPath: /var/lib/docker
+      - name: workspace-volume
+        mountPath: /home/jenkins/agent
+
+  volumes:
+    - name: workspace-volume
+      emptyDir: {}
+    - name: docker-graph
+      emptyDir: {}
+'''
+        }
+    }
 
     environment {
         GITLAB_CREDENTIALS = 'gitlab-project-token'
-        GITLAB_URL = 'ssh://git@gitlab.helen-tam.org:2222/root/weather-app.git'
-
-        DOCKER_IMAGE_TAG = 'helentam93/weather-app'
+        GITLAB_URL = 'http://10.0.3.117/root/weather.git' // replace with actual private IP
+        DOCKER_IMAGE_TAG = "helentam93/weather:${BUILD_NUMBER}"
         DOCKER_HUB_CREDENTIALS = 'dockerhub-creds'
-
     }
 
     stages {
@@ -31,75 +74,38 @@ pipeline {
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Login to Docker Hub and Build Image') {
             steps {
-                script {
-                    IMAGE_TAG = "v${currentBuild.startTimeInMillis}"  // Plugin utility can help here too
-                    env.IMAGE_TAG = IMAGE_TAG
-                    echo "Building Docker image with tag ${IMAGE_TAG}..."
-                    docker.build("${DOCKER_IMAGE_TAG}:${IMAGE_TAG}")
-                    docker.build("${DOCKER_IMAGE_TAG}:latest")
-                }
-            }
-        }
-
-        stage('Test the app is reachable') {
-            steps {
-                script {
-                    echo "Starting container for testing..."
-                    sh '''
-                        # remove old test containers if exists
-                        docker rm -f weather-test || test
-                        docker run -d --name weather-test -p 8000:8000 ${DOCKER_IMAGE_TAG}:${IMAGE_TAG}
-                        sleep 10
-                        STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000)
-                        echo "HTTP status code: $STATUS"
-
-                        if [ "$STATUS" -ne 200 ]; then
-                            echo "App is not reachable. HTTP code: $STATUS"
-                            docker logs weather-test
-                            docker rm -f weather-test
-                            exit 1
-                        else
-                            echo "App is reachable!"
-                            docker rm -f weather-test
-                        fi
-                    '''
-                }
-            }
-        }
-
-        stage('Push Docker Image') {
-            steps {
-                script {
-                    docker.withRegistry('https://index.docker.io/v1/', "${DOCKER_HUB_CREDENTIALS}") {
-                        docker.image("${DOCKER_IMAGE_TAG}:${IMAGE_TAG}").push()
-                        docker.image("${DOCKER_IMAGE_TAG}:latest").push()
+                container('docker') {
+                    withCredentials([usernamePassword(
+                        credentialsId: "${env.DOCKER_HUB_CREDENTIALS}",
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )]) {
+                        dir('/home/jenkins/agent') {
+                            sh """
+                            echo "Waiting for Docker daemon..."
+                            until docker info >/dev/null 2>&1; do sleep 2; done
+                            echo "Logging into Docker Hub..."
+                            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                            echo "Building Docker image..."
+                            docker build -t ${DOCKER_IMAGE_TAG} .
+                            echo "Pushing Docker image..."
+                            docker push ${DOCKER_IMAGE_TAG}
+                            """
+                        }
                     }
-                }
-            }
-        }
-
-        stage('Deploy to EC2') {
-            steps {
-                sshagent([DEPLOY_SSH_CREDENTIALS]) {
-                    sh """
-                        echo "Deploying Docker container on EC2..."
-                        ssh -o StrictHostKeyChecking=no ${TARGET_EC2} '
-                        cd /home/ubuntu/weather-app
-                        docker compose down
-                        docker compose pull
-                        docker compose up -d --no-build
-                        docker image prune -f
-                        '
-                    """
                 }
             }
         }
     }
 
     post {
-        always { sh 'docker image prune -f' }
+        always {
+            container('docker') {
+                sh 'docker image prune -f'
+            }
+        }
         success {
             echo "Pipeline completed successfully!"
             slackSend(
@@ -118,3 +124,4 @@ pipeline {
         }
     }
 }
+
