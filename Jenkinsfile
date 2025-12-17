@@ -12,7 +12,7 @@ metadata:
 spec:
   containers:
   - name: jnlp
-    image: jenkins/inbound-agent:lts
+    image: jenkins/inbound-agent
     args: ['$(JENKINS_SECRET)', '$(JENKINS_NAME)']
     volumeMounts:
       - name: workspace-volume
