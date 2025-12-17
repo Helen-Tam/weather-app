@@ -1,5 +1,5 @@
 # base image for Flask application
-FROM python:3.11-slim
+FROM python:3.6-slim
 
 # set working directory
 WORKDIR /app
