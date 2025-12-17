@@ -51,7 +51,7 @@ spec:
 
     environment {
         GITLAB_URL = 'https://gitlab.helen-tam.org/root/weather.git' // replace with actual private IP
-        DOCKER_IMAGE_TAG = "helentam93/weather:${BUILD_NUMBER}"
+        DOCKER_IMAGE_TAG = "helentam93/weather:latest"
         DOCKER_HUB_CREDENTIALS = 'dockerhub-creds'
     }
 
@@ -82,6 +82,24 @@ spec:
         stage('Login to Docker Hub and Build Image') {
             steps {
                 container('docker') {
+                    script {
+                            sh """
+                            echo "Waiting for Docker daemon..."
+                            until docker info >/dev/null 2>&1; do sleep 2; done
+
+                            echo "Building Docker image..."
+                            docker build -t ${DOCKER_IMAGE_TAG} .
+
+                            """
+
+                    }
+                }
+            }
+        }
+    }
+/*     stage('Login to Docker Hub and Build Image') {
+            steps {
+                container('docker') {
                     withCredentials([usernamePassword(
                         credentialsId: "${env.DOCKER_HUB_CREDENTIALS}",
                         usernameVariable: 'DOCKER_USER',
@@ -103,7 +121,7 @@ spec:
                 }
             }
         }
-    }
+    } */
 
     post {
         always {
