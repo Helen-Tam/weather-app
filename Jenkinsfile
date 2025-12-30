@@ -124,7 +124,7 @@ spec:
                             until docker info >/dev/null 2>&1; do sleep 2; done
 
                             echo "Building Docker image..."
-                            docker build -t ${DOCKER_IMAGE} .
+                            docker build -t ${env.DOCKER_IMAGE} .
 
                             echo "Scanning Dockerfile ..."
                             docker run --rm -v \$(pwd):/src aquasec/trivy:latest config \
