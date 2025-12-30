@@ -53,7 +53,7 @@ spec:
 
         DOCKER_REPO = "helentam93/weather"
         IMAGE_TAG  = "${env.BUILD_NUMBER}"
-        DOCKER_IMAGE = "${IMAGE_REPO}:${IMAGE_TAG}"
+        DOCKER_IMAGE = "${DOCKER_REPO}:${IMAGE_TAG}"
         DOCKER_HUB_CREDENTIALS = 'dockerhub-creds'
     }
 
