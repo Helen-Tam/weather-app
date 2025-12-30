@@ -128,6 +128,7 @@ spec:
                 }
             }
         }
+    }
 
 //         stage('Update image tag in the Helm Chart') {
 //             steps {
