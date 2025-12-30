@@ -2,7 +2,6 @@ pipeline {
     agent {
         kubernetes {
             label 'jenkins-agent'
-            defaultContainer 'jnlp'
             yaml '''
 apiVersion: v1
 kind: Pod
@@ -50,12 +49,13 @@ spec:
     }
 
     environment {
-        GITLAB_URL = 'https://gitlab.helen-tam.org/root/weather.git' // replace with actual private IP
-        DOCKER_IMAGE_TAG = "helentam93/weather:latest"
+        GITLAB_CREDENTIALS = 'git-lab-key'
+
+        DOCKER_REPO = "helentam93/weather"
+        IMAGE_TAG  = "${env.BUILD_NUMBER}"
+        DOCKER_IMAGE = "${IMAGE_REPO}:${IMAGE_TAG}"
         DOCKER_HUB_CREDENTIALS = 'dockerhub-creds'
     }
-
-
 
     stages {
         stage('Clone Repo') {
@@ -69,12 +69,14 @@ spec:
 
         stage('Pylint Check') {
             steps {
+              container('pylint-agent') {
                 sh '''
                     echo "Running pylint on app.py..."
                     SCORE=$(pylint app.py | awk '/rated at/ {print $7}' | cut -d'/' -f1)
                     echo "Pylint score: $SCORE"
                     (( $(echo "$SCORE < 5.0" | bc -l) )) && exit 1 || echo "Score OK"
                 '''
+              }
             }
         }
 
@@ -87,22 +89,22 @@ spec:
                             until docker info >/dev/null 2>&1; do sleep 2; done
 
                             echo "Building Docker image..."
-                            docker build -t ${DOCKER_IMAGE_TAG} .
+                            docker build -t ${DOCKER_IMAGE} .
 
                             echo "Installing curl..."
                             apk add --no-cache curl
 
-                            echo "Testing Docker image reachability..."
-                            # Start a container in detached mode
-                            docker run -d --name temp-test-container -p 8000:8000 ${DOCKER_IMAGE_TAG}
+                            echo "Running container for test..."
+                            docker run -d --name test-container -p 8000:8000 ${DOCKER_IMAGE}
                             sleep 5
-                            curl -f http://localhost:8000 || { echo "Reachability test FAILED"; docker logs temp-test-container; docker rm -f temp-test-container; exit 1; }
 
-                            echo "Reachability test SUCCESS"
-
-                            # Stop and remove the test container
-                            docker rm -f temp-test-container
-
+                            echo "Testing application reachability..."
+                            if curl -f http://localhost:8000; then
+                                echo "Reachability test PASSED"
+                            else
+                                echo "Reachability test FAILED"
+                                exit 1
+                            fi
                             """
                     }
                 }
@@ -112,35 +114,37 @@ spec:
         stage('Push to DockerHub') {
             steps {
                 container('docker') {
-                    withCredentials([usernamePassword(credentialsId: "${DOCKER_HUB_CREDENTIALS}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    withCredentials([usernamePassword(
+                        credentialsId: "${DOCKER_HUB_CREDENTIALS}",
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS')]) {
                       sh """
                         echo "Logging into Docker Hub..."
                         echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
-                        echo "Pushing Docker image ${DOCKER_IMAGE_TAG}..."
-                        docker push ${DOCKER_IMAGE_TAG}
+                        echo "Pushing Docker image ${DOCKER_IMAGE}..."
+                        docker push ${DOCKER_IMAGE}
                       """
                     }
                 }
             }
         }
 
-        stage('Update APP version in the Helm Chart') {
+        stage('Update image tag in the Helm Chart') {
             steps {
                 container('jnlp') {
                     script {
-                        def APP_VERSION = "1.0.${env.BUILD_NUMBER}"
-                        withCredentials([usernamePassword(credentialsId: 'gitlab-deploy-token', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
+                        withCredentials([usernamePassword(
+                            credentialsId: 'git-lab-key',
+                            usernameVariable: 'GIT_USER',
+                            passwordVariable: 'GIT_TOKEN')]) {
                           sh """
-                            echo "Updating weather-app chart to version ${APP_VERSION}"
+                            echo "Updating Helm values.yaml image tag to ${IMAGE_TAG}"
                             ls -l weather-app/
-                            sed -i "s/^appVersion:.*/appVersion: ${APP_VERSION}/" weather-app/Chart.yaml
-                            sed -i "s/^version:.*/version: ${APP_VERSION}/" weather-app/Chart.yaml
+                            sed -i "s/^  tag:.*/  tag: ${IMAGE_TAG}/" weather-app/values.yaml
 
                             # Push the changes bask to the repository
-                            git config user.name "root"
-                            git config user.email "gitlab_admin_a6409f@example.com"
-                            git add weather-app/Chart.yaml
-                            git commit -m "Update weather-app chart to version ${APP_VERSION}" || echo "No changes to commit"
+                            git add weather-app/values.yaml
+                            git commit -m "Update weather image tag to ${IMAGE_TAG}" || echo "No changes to commit"
                             git push https://$GIT_USER:$GIT_TOKEN@gitlab.helen-tam.org/root/weather-app.git HEAD:main
                         """
                        }
@@ -150,12 +154,14 @@ spec:
         }
     }
 
-
     post {
         always {
-            container('docker') {
-                sh 'docker image prune -f'
-            }
+           container('docker') {
+              sh """
+                echo "Cleaning up test container if it exists..."
+                docker rm -f test-container || true
+              """
+           }
         }
         success {
             echo "Pipeline completed successfully!"
