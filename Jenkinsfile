@@ -119,12 +119,12 @@ spec:
             steps {
                 container('docker') {
                     script {
-                            sh """
+                         sh '''
                             echo "Waiting for Docker daemon..."
                             until docker info >/dev/null 2>&1; do sleep 2; done
 
                             echo "Building Docker image..."
-                            docker build -t ${env.DOCKER_IMAGE} .
+                            docker build -t $DOCKER_IMAGE .
 
                             echo "Scanning Dockerfile ..."
                             docker run --rm -v \$(pwd):/src aquasec/trivy:latest config \
@@ -132,13 +132,13 @@ spec:
 
                             echo "Docker image scan ..."
                             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v $(pwd):/src aquasec/trivy:latest image \
-                              --exit-code 1 --severity CRITICAL ${DOCKER_IMAGE}
+                              --exit-code 1 --severity CRITICAL $DOCKER_IMAGE
 
                             echo "Installing curl..."
                             apk add --no-cache curl
 
                             echo "Running container for test..."
-                            docker run -d --name test-container -p 8000:8000 ${DOCKER_IMAGE}
+                            docker run -d --name test-container -p 8000:8000 $DOCKER_IMAGE
                             sleep 5
 
                             echo "Testing application reachability..."
@@ -148,7 +148,7 @@ spec:
                                 echo "Reachability test FAILED"
                                 exit 1
                             fi
-                            """
+                         '''
                     }
                 }
             }
