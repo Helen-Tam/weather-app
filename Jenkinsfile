@@ -103,9 +103,13 @@ spec:
             steps {
                 container('docker') {
                     sh '''
-                        echo "Running the dependency scan..."
-                        docker run --rm -v \$(pwd):/app aquasec/trivy:latest fs \
-                          --exit-code 1 --severity CRITICAL /app
+                        echo "Running the dependency file-system scan..."
+                        docker run --rm -v \$(pwd):/src aquasec/trivy:latest fs \
+                          --exit-code 1 --severity CRITICAL /src
+
+                        echo "Running the configuration scan..."
+                        docker run --rm -v \$(pwd):/src aquasec/trivy:latest config \
+                          --exit-code 1 --severity CRITICAL /src
                     '''
                 }
             }
@@ -123,8 +127,12 @@ spec:
                             docker build -t ${DOCKER_IMAGE} .
 
                             echo "Scanning Dockerfile ..."
-                            docker run --rm -v \$(pwd):/src aquasec/trivy:latest fs \
-                              --exit-code 1 --severity CRITICAL /src/Dockerfile
+                            docker run --rm -v \$(pwd):/src aquasec/trivy:latest config \
+                              --exit-code 1 --severity CRITICAL /src
+
+                            echo "Docker image scan ..."
+                            docker run --rm -v \$(pwd):/src aquasec/trivy:latest image \
+                              --exit-code 1 --severity CRITICAL ${DOCKER_IMAGE}
 
                             echo "Installing curl..."
                             apk add --no-cache curl
