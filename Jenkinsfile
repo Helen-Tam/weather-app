@@ -73,12 +73,12 @@ spec:
                   sh '''
                       echo "Create virtual environment..."
                       python3 -m venv venv
-                      source venv/bin/activate
+                      . venv/bin/activate
 
                       echo "Installing truffleHog..."
                       pip install --upgrade pip
                       pip install truffleHog
-                      
+
                       echo "Running secret scan..."
                       trufflehog filesystem . --entropy=True --fail
                   '''
