@@ -104,8 +104,8 @@ spec:
                 container('pylint-agent') {
                     sh '''
                         echo "Installing Trivy..."
-                        apt-get update -y
-                        apt-get install -y trivy
+                        sudo apt-get update -y
+                        sudo apt-get install -y trivy
 
                         echo "Running the dependency scan..."
                         trivy fs --python-pip requirements.txt --severity CRITICAL --exit-code 1 .
@@ -129,7 +129,7 @@ spec:
                             trivy image --severity CRITICAL --exit-code 1 ${DOCKER_IMAGE}
 
                             echo "Scanning Dockerfile for misconfigurations..."
-                            trivy config --severity CRITICAL --exit-code 1 . 
+                            trivy config --severity CRITICAL --exit-code 1 .
 
                             echo "Installing curl..."
                             apk add --no-cache curl
