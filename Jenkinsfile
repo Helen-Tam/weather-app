@@ -80,7 +80,7 @@ spec:
                       pip install truffleHog
 
                       echo "Running secret scan..."
-                      trufflehog discover --json --max_depth 10 . 
+                      trufflehog discover --repo_path . --json --max_depth 10
                   '''
                 }
             }
