@@ -99,6 +99,21 @@ spec:
             }
         }
 
+        stage('Dependency Scan for Python') {
+            steps {
+                container('pylint-agent') {
+                    sh '''
+                        echo "Installing Trivy..."
+                        apt-get update -y
+                        apt-get install -y trivy
+
+                        echo "Running the dependency scan..."
+                        trivy fs --python-pip requirements.txt --severity CRITICAL --exit-code 1 .
+                    '''
+                }
+            }
+        }
+
         stage('Build and Test Docker Image') {
             steps {
                 container('docker') {
@@ -109,6 +124,12 @@ spec:
 
                             echo "Building Docker image..."
                             docker build -t ${DOCKER_IMAGE} .
+
+                            echo "Scanning Docker image for CRITICAL vulnerabilities..."
+                            trivy image --severity CRITICAL --exit-code 1 ${DOCKER_IMAGE}
+
+                            echo "Scanning Dockerfile for misconfigurations..."
+                            trivy config --severity CRITICAL --exit-code 1 . 
 
                             echo "Installing curl..."
                             apk add --no-cache curl
