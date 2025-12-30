@@ -67,6 +67,22 @@ spec:
             }
         }
 
+        stage('Static Code Analysis') {
+            when {
+                branch 'main'
+            }
+            steps {
+                container('pylint-agent') {
+                  sh '''
+                    echo "Running pylint on app.py..."
+                    SCORE=$(pylint app.py | awk '/rated at/ {print $7}' | cut -d'/' -f1)
+                    echo "Pylint score: $SCORE"
+                    (( $(echo "$SCORE < 5.0" | bc -l) )) && exit 1 || echo "Score OK"
+                  '''
+                }
+            }
+        }
+
         stage('TruffleHog Secret Scan') {
             steps {
                 container('pylint-agent') {
@@ -83,19 +99,6 @@ spec:
                       trufflehog discover --repo_path . --json --max_depth 10
                   '''
                 }
-            }
-        }
-
-        stage('Pylint Check') {
-            steps {
-              container('pylint-agent') {
-                sh '''
-                    echo "Running pylint on app.py..."
-                    SCORE=$(pylint app.py | awk '/rated at/ {print $7}' | cut -d'/' -f1)
-                    echo "Pylint score: $SCORE"
-                    (( $(echo "$SCORE < 5.0" | bc -l) )) && exit 1 || echo "Score OK"
-                '''
-              }
             }
         }
 
