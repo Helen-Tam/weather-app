@@ -129,30 +129,30 @@ spec:
             }
         }
 
-        stage('Update image tag in the Helm Chart') {
-            steps {
-                container('jnlp') {
-                    script {
-                        withCredentials([usernamePassword(
-                            credentialsId: 'git-lab-key',
-                            usernameVariable: 'GIT_USER',
-                            passwordVariable: 'GIT_TOKEN')]) {
-                          sh """
-                            echo "Updating Helm values.yaml image tag to ${IMAGE_TAG}"
-                            ls -l weather-app/
-                            sed -i "s/^  tag:.*/  tag: ${IMAGE_TAG}/" weather-app/values.yaml
-
-                            # Push the changes bask to the repository
-                            git add weather-app/values.yaml
-                            git commit -m "Update weather image tag to ${IMAGE_TAG}" || echo "No changes to commit"
-                            git push https://$GIT_USER:$GIT_TOKEN@gitlab.helen-tam.org/root/weather-app.git HEAD:main
-                        """
-                       }
-                    }
-                }
-            }
-        }
-    }
+//         stage('Update image tag in the Helm Chart') {
+//             steps {
+//                 container('jnlp') {
+//                     script {
+//                         withCredentials([usernamePassword(
+//                             credentialsId: 'git-lab-key',
+//                             usernameVariable: 'GIT_USER',
+//                             passwordVariable: 'GIT_TOKEN')]) {
+//                           sh """
+//                             echo "Updating Helm values.yaml image tag to ${IMAGE_TAG}"
+//                             ls -l weather-app/
+//                             sed -i "s/^  tag:.*/  tag: ${IMAGE_TAG}/" weather-app/values.yaml
+//
+//                             # Push the changes bask to the repository
+//                             git add weather-app/values.yaml
+//                             git commit -m "Update weather image tag to ${IMAGE_TAG}" || echo "No changes to commit"
+//                             git push https://$GIT_USER:$GIT_TOKEN@gitlab.helen-tam.org/root/weather-app.git HEAD:main
+//                         """
+//                        }
+//                     }
+//                 }
+//             }
+//         }
+//     }
 
     post {
         always {
