@@ -67,6 +67,20 @@ spec:
             }
         }
 
+        stage('TruffleHog Secret Scan') {
+            steps {
+                container('jnlp') {
+                  sh '''
+                      echo "Installing truffleHog..."
+                      pip install --upgrade pip
+                      pip install truffleHog
+                      echo "Running secret scan..."
+                      trufflehog filesystem . --entropy=True --fail
+                  '''
+                }
+            }
+        }
+
         stage('Pylint Check') {
             steps {
               container('pylint-agent') {
