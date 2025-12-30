@@ -69,7 +69,7 @@ spec:
 
         stage('TruffleHog Secret Scan') {
             steps {
-                container('jnlp') {
+                container('pylint-agent') {
                   sh '''
                       echo "Installing truffleHog..."
                       pip install --upgrade pip
