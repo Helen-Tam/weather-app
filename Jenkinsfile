@@ -131,7 +131,7 @@ spec:
                               --exit-code 1 --severity CRITICAL /src
 
                             echo "Docker image scan ..."
-                            docker run --rm -v \$(pwd):/src aquasec/trivy:latest image \
+                            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v $(pwd):/src aquasec/trivy:latest image \
                               --exit-code 1 --severity CRITICAL ${DOCKER_IMAGE}
 
                             echo "Installing curl..."
