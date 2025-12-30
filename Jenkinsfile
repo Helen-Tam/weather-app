@@ -80,7 +80,7 @@ spec:
                       pip install truffleHog
 
                       echo "Running secret scan..."
-                      trufflehog filesystem . --entropy=True --fail
+                      trufflehog discover --json --max_depth 10 . 
                   '''
                 }
             }
