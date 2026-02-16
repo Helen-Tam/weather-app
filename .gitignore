@@ -1,26 +1,45 @@
-# Python cache
-__pycache__/
-*.pyc
+# Ignore everything
+*
+*/*/*/.venv/
 
-# Token file
-*token.txt
+# Do not ignore .gitignore
+!.gitignore
 
-# Virtual environment
-venv/
+# Do not ignore image directory
+!images/**
 
-# Logs
+# But don't ignore folders
+!*/
+
+# But don't ignore these specific file types (example: .txt and .md files)
+!*.txt
+!*.md
+!*.sh
+!*.c
+!*.h
+!*.py
+!*.css
+!*.html
+!*.yaml
+!*Jenkinsfile
+
+# Enforce ignoring those
+**/.idea/
+**/.vscode/
+**/.venv/
+**/venv/
+**/__pycache__/
+*.py[cod]
 *.log
+*.pre-commit-config.yaml
 
-# OS files
-.DS_Store
-Thumbs.db
-
-# IDE/editor config
-.vscode/
-.idea/
-
-# Docker overrides / local env
-*.env
-*.dockerignore
+# Docker
+*.log
+*.tmp
 docker-compose.override.yml
-**/Dockerfile.multistage
+.docker/
+
+# Environment variables
+.env
+
+
