@@ -17,7 +17,7 @@ spec:
       - name: workspace-volume
         mountPath: /home/jenkins/agent
 
-  - name: pylint-agent
+  - name: main-agent
     image: idandror/jenkins-agent:latest
     command:
       - cat
@@ -72,12 +72,12 @@ spec:
                 branch 'main'
             }
             steps {
-                container('pylint-agent') {
+                container('main-agent') {
                   sh '''
                     echo "Running pylint on app.py..."
                     SCORE=$(pylint app.py | awk '/rated at/ {print $7}' | cut -d'/' -f1)
                     echo "Pylint score: $SCORE"
-                    (( $(echo "$SCORE < 5.0" | bc -l) )) && exit 1 || echo "Score OK"
+                    (( $(echo "$SCORE < 7.0" | bc -l) )) && exit 1 || echo "Score OK"
                   '''
                 }
             }
@@ -85,7 +85,7 @@ spec:
 
         stage('TruffleHog Secret Scan') {
             steps {
-                container('pylint-agent') {
+                container('main-agent') {
                   sh '''
                       echo "Create virtual environment..."
                       python3 -m venv venv
@@ -110,9 +110,9 @@ spec:
                         docker run --rm -v \$(pwd):/src aquasec/trivy:latest fs \
                           --exit-code 1 --severity CRITICAL /src
 
-                        echo "Running the configuration scan..."
+                        echo "Scanning Dockerfile ..."
                         docker run --rm -v \$(pwd):/src aquasec/trivy:latest config \
-                          --exit-code 1 --severity CRITICAL /src
+                          --exit-code 1 --severity CRITICAL /src/Dockerfile
                     '''
                 }
             }
@@ -121,17 +121,12 @@ spec:
         stage('Build and Test Docker Image') {
             steps {
                 container('docker') {
-                    script {
                          sh '''
                             echo "Waiting for Docker daemon..."
                             until docker info >/dev/null 2>&1; do sleep 2; done
 
                             echo "Building Docker image..."
                             docker build -t $DOCKER_IMAGE .
-
-                            echo "Scanning Dockerfile ..."
-                            docker run --rm -v \$(pwd):/src aquasec/trivy:latest config \
-                              --exit-code 1 --severity CRITICAL /src/Dockerfile
 
                             echo "Installing curl..."
                             apk add --no-cache curl
@@ -147,55 +142,73 @@ spec:
                                 echo "Reachability test FAILED"
                                 exit 1
                             fi
+
+                            echo "Stopping the test container..."
+                            docker stop test-container
+                            docker rm test-container
                          '''
+                }
+            }
+        }
+
+        stage('Push and Sign Image') {
+            steps {
+                container('docker') {
+                    withCredentials([
+                        usernamePassword(credentialsId: "${DOCKER_HUB_CREDENTIALS}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS'),
+                        file(credentialsId: 'cosign-key', variable: 'COSIGN_KEY_FILE')
+                    ]) {
+                        sh '''
+                            echo "Logging into Docker Hub..."
+                            echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+
+                            echo "Pushing Image..."
+                            docker push $DOCKER_IMAGE
+
+                            echo "Installing Cosign..."
+                            curl -LO https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
+                            chmod +x cosign-linux-amd64
+                            mv cosign-linux-amd64 /usr/local/bin/cosign
+
+                            echo "Identifying Image Digest..."
+                            # This gets the immutable identifier from the registry
+                            IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $DOCKER_IMAGE)
+
+                            echo "Signing Digest: $IMAGE_DIGEST"
+                            cosign sign --key $COSIGN_KEY_FILE --tlog-upload=false $IMAGE_DIGEST
+                        '''
                     }
                 }
             }
         }
 
-        stage('Push to DockerHub') {
+        stage('Update image tag in the Helm Chart') {
             steps {
-                container('docker') {
-                    withCredentials([usernamePassword(
-                        credentialsId: "${DOCKER_HUB_CREDENTIALS}",
-                        usernameVariable: 'DOCKER_USER',
-                        passwordVariable: 'DOCKER_PASS')]) {
-                      sh """
-                        echo "Logging into Docker Hub..."
-                        echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
-                        echo "Pushing Docker image ${DOCKER_IMAGE}..."
-                        docker push ${DOCKER_IMAGE}
-                      """
+                container('jnlp') {
+                    script {
+                        withCredentials([usernamePassword(
+                            credentialsId: 'git-lab-key',
+                            usernameVariable: 'GIT_USER',
+                            passwordVariable: 'GIT_TOKEN')]) {
+                          sh '''
+                            git config user.email "jenkins-agent@example.com"
+                            git config user.name "Jenkins agent"
+
+                            echo "Updating Helm values.yaml image tag to ${IMAGE_TAG}"
+                            ls -l gitops/weather-app/
+                            sed -i "s|digest:.*|digest: ${IMAGE_DIGEST#*@}|" gitops/weather-app/values.yaml
+
+                            # Push the changes bask to the repository
+                            git add weather-app/values.yaml
+                            git commit -m "Update weather image tag to ${IMAGE_TAG}"
+                            git push https://${GIT_USER}:${GIT_TOKEN}@gitlab.helen-tam.org/root/weather-app.git HEAD:main
+                          '''
+                       }
                     }
                 }
             }
         }
     }
-
-//         stage('Update image tag in the Helm Chart') {
-//             steps {
-//                 container('jnlp') {
-//                     script {
-//                         withCredentials([usernamePassword(
-//                             credentialsId: 'git-lab-key',
-//                             usernameVariable: 'GIT_USER',
-//                             passwordVariable: 'GIT_TOKEN')]) {
-//                           sh """
-//                             echo "Updating Helm values.yaml image tag to ${IMAGE_TAG}"
-//                             ls -l weather-app/
-//                             sed -i "s/^  tag:.*/  tag: ${IMAGE_TAG}/" weather-app/values.yaml
-//
-//                             # Push the changes bask to the repository
-//                             git add weather-app/values.yaml
-//                             git commit -m "Update weather image tag to ${IMAGE_TAG}" || echo "No changes to commit"
-//                             git push https://$GIT_USER:$GIT_TOKEN@gitlab.helen-tam.org/root/weather-app.git HEAD:main
-//                         """
-//                        }
-//                     }
-//                 }
-//             }
-//         }
-//     }
 
     post {
         always {
