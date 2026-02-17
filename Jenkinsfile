@@ -190,19 +190,20 @@ spec:
                             echo "Pushing Image..."
                             docker push $DOCKER_IMAGE
 
-                            echo "Installing Cosign..."
-                            curl -LO https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
-                            chmod +x cosign-linux-amd64
-                            mv cosign-linux-amd64 /usr/local/bin/cosign
-
                             echo "Identifying Image Digest..."
                             IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $DOCKER_IMAGE)
+                            echo $IMAGE_DIGEST > image-digest.txt
+                            echo "Image digest: $IMAGE_DIGEST"
 
                             echo "Signing Digest: $IMAGE_DIGEST"
+
                             if [ "$BRANCH_NAME" != "develop" ]; then
+                                echo "Installing Cosign..."
                                 curl -LO https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
                                 chmod +x cosign-linux-amd64
                                 mv cosign-linux-amd64 /usr/local/bin/cosign
+
+                                echo "Signing image digest..."
                                 cosign sign --key $COSIGN_KEY_FILE --tlog-upload=false $IMAGE_DIGEST
                             else
                                 echo "Skipping image signing for develop"
@@ -239,19 +240,38 @@ spec:
                         if (envName) {
                             echo "Updating Helm values for environment: ${envName}"
 
-                            sh """
-                                rm -rf ${GITOPS_DIR}
-                                git clone https://${GIT_CREDENTIALS}@github.com/Helen-Tam/gitops-weather-app.git ${GITOPS_DIR}
-                                cd ${GITOPS_DIR}
-                                git config user.email "jenkins@ci.local"
-                                git config user.name "Jenkins CI"
+                            withCredentials([usernamePassword(
+                                credentialsId: "${GIT_CREDENTIALS}",
+                                usernameVariable: 'GIT_USER',
+                                passwordVariable: 'GIT_TOKEN'
+                            )]) {
+                                sh """
+                                    rm -rf ${GITOPS_DIR}
+                                    git clone https://${GIT_USER}:${GIT_TOKEN}@github.com/Helen-Tam/gitops-weather-app.git ${GITOPS_DIR}
+                                    cd ${GITOPS_DIR}
+                                    git config user.email "jenkins@ci.local"
+                                    git config user.name "Jenkins CI"
 
-                                cd weather-app
-                                yq eval '.image.tag = "${IMAGE_TAG}"' -i values-${envName}.yaml
-                                git add values-${envName}.yaml
-                                git commit -m "Update image tag to ${IMAGE_TAG} for ${envName} environment"
-                                git push
-                            """
+                                    cd weather-app
+
+                                    if [ "$BRANCH_NAME" = "develop" ]; then
+                                        echo "Updating tag for dev"
+                                        yq e '.image.tag = "${IMAGE_TAG}" | .image.digest = ""' -i values-${envName}.yaml
+                                    else
+                                        echo "Updating digest for ${envName}"
+                                        DIGEST=$(cut -d@ -f2 ../../image-digest.txt)
+                                        yq e '.image.digest = "'$DIGEST'" | .image.tag = ""' -i values-${envName}.yaml
+                                    fi
+
+                                    git add values-${envName}.yaml
+                                    if git diff --cached --quiet; then
+                                        echo "No GitOps changes detected; skipping commit."
+                                    else
+                                        git commit -m "Update image reference for ${envName}"
+                                        git push origin main
+                                    fi
+                                """
+                            }
                         }
                     }
                 }
@@ -287,4 +307,3 @@ spec:
         }
     }
 }
-
