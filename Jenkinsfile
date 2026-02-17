@@ -49,36 +49,43 @@ spec:
     }
 
     environment {
-        GITLAB_CREDENTIALS = 'git-lab-key'
+        GITOPS_REPO = "https://github.com/Helen-Tam/gitops-weather-app.git"
+        GITOPS_DIR  = "gitops-weather-app"
 
         DOCKER_REPO = "helentam93/weather"
-        IMAGE_TAG  = "${env.BUILD_NUMBER}"
+        IMAGE_TAG   = "${env.BRANCH_NAME}-${env.BUILD_NUMBER}"
         DOCKER_IMAGE = "${DOCKER_REPO}:${IMAGE_TAG}"
+
         DOCKER_HUB_CREDENTIALS = 'dockerhub-creds'
+        GIT_CREDENTIALS       = 'git-creds'
     }
 
     stages {
-        stage('Clone Repo') {
+
+        stage('Clone App Repo') {
             steps {
-              container('jnlp') {
-                echo 'Cloning repository from GitLab...'
-                checkout scm
-              }
+                container('jnlp') {
+                    echo "Cloning application repository..."
+                    checkout scm
+                }
             }
         }
 
         stage('Static Code Analysis') {
             when {
-                branch 'main'
+                anyOf {
+                    branch 'develop'
+                    branch 'staging'
+                }
             }
             steps {
                 container('main-agent') {
-                  sh '''
-                    echo "Running pylint on app.py..."
-                    SCORE=$(pylint app.py | awk '/rated at/ {print $7}' | cut -d'/' -f1)
-                    echo "Pylint score: $SCORE"
-                    (( $(echo "$SCORE < 7.0" | bc -l) )) && exit 1 || echo "Score OK"
-                  '''
+                    sh '''
+                      echo "Running pylint on app.py..."
+                      SCORE=$(pylint app.py | awk '/rated at/ {print $7}' | cut -d'/' -f1)
+                      echo "Pylint score: $SCORE"
+                      (( $(echo "$SCORE < 7.0" | bc -l) )) && exit 1 || echo "Score OK"
+                    '''
                 }
             }
         }
@@ -107,11 +114,11 @@ spec:
                 container('docker') {
                     sh '''
                         echo "Running the dependency file-system scan..."
-                        docker run --rm -v \$(pwd):/src aquasec/trivy:latest fs \
+                        docker run --rm -v $(pwd):/src aquasec/trivy:latest fs \
                           --exit-code 1 --severity CRITICAL /src
 
                         echo "Scanning Dockerfile ..."
-                        docker run --rm -v \$(pwd):/src aquasec/trivy:latest config \
+                        docker run --rm -v $(pwd):/src aquasec/trivy:latest config \
                           --exit-code 1 --severity CRITICAL /src/Dockerfile
                     '''
                 }
@@ -119,43 +126,61 @@ spec:
         }
 
         stage('Build and Test Docker Image') {
+            when {
+                anyOf {
+                    branch 'develop'
+                    branch 'staging'
+                    branch 'main'
+                }
+            }
             steps {
                 container('docker') {
-                         sh '''
-                            echo "Waiting for Docker daemon..."
-                            until docker info >/dev/null 2>&1; do sleep 2; done
+                    sh '''
+                        echo "Waiting for Docker daemon..."
+                        until docker info >/dev/null 2>&1; do sleep 2; done
 
-                            echo "Building Docker image..."
-                            docker build -t $DOCKER_IMAGE .
+                        echo "Building Docker image..."
+                        docker build -t $DOCKER_IMAGE .
 
-                            echo "Installing curl..."
-                            apk add --no-cache curl
+                        echo "Scanning Built Image for OS Vulnerabilities..."
+                        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                            aquasec/trivy:latest image \
+                            --exit-code 1 --severity CRITICAL $DOCKER_IMAGE
 
-                            echo "Running container for test..."
-                            docker run -d --name test-container -p 8000:8000 $DOCKER_IMAGE
-                            sleep 5
+                        echo "Running container for test..."
+                        docker run -d --name test-container -p 8000:8000 $DOCKER_IMAGE
+                        sleep 5
 
-                            echo "Testing application reachability..."
-                            if curl -f http://localhost:8000; then
-                                echo "Reachability test PASSED"
-                            else
-                                echo "Reachability test FAILED"
-                                exit 1
-                            fi
+                        echo "Testing application reachability..."
+                        if curl -f http://localhost:8000; then
+                            echo "Reachability test PASSED"
+                        else
+                            echo "Reachability test FAILED"
+                            exit 1
+                        fi
 
-                            echo "Stopping the test container..."
-                            docker stop test-container
-                            docker rm test-container
-                         '''
+                        echo "Stopping the test container..."
+                        docker stop test-container
+                        docker rm test-container
+                    '''
                 }
             }
         }
 
         stage('Push and Sign Image') {
+            when {
+                anyOf {
+                    branch 'develop'
+                    branch 'staging'
+                    branch 'main'
+                }
+            }
             steps {
                 container('docker') {
-                    withCredentials([
-                        usernamePassword(credentialsId: "${DOCKER_HUB_CREDENTIALS}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS'),
+                    withCredentials([usernamePassword(
+                        credentialsId: "${DOCKER_HUB_CREDENTIALS}", 
+                        usernameVariable: 'DOCKER_USER', 
+                        passwordVariable: 'DOCKER_PASS'),
                         file(credentialsId: 'cosign-key', variable: 'COSIGN_KEY_FILE')
                     ]) {
                         sh '''
@@ -171,44 +196,69 @@ spec:
                             mv cosign-linux-amd64 /usr/local/bin/cosign
 
                             echo "Identifying Image Digest..."
-                            # This gets the immutable identifier from the registry
                             IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $DOCKER_IMAGE)
 
                             echo "Signing Digest: $IMAGE_DIGEST"
-                            cosign sign --key $COSIGN_KEY_FILE --tlog-upload=false $IMAGE_DIGEST
+                            if [ "$BRANCH_NAME" != "develop" ]; then
+                                curl -LO https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
+                                chmod +x cosign-linux-amd64
+                                mv cosign-linux-amd64 /usr/local/bin/cosign
+                                cosign sign --key $COSIGN_KEY_FILE --tlog-upload=false $IMAGE_DIGEST
+                            else
+                                echo "Skipping image signing for develop"
+                            fi
                         '''
                     }
                 }
             }
         }
 
-        stage('Update image tag in the Helm Chart') {
+        stage('Update Helm Chart in GitOps Repo') {
+            when {
+                anyOf {
+                    branch 'develop'
+                    branch 'staging'
+                    branch 'main'
+                }
+            }
             steps {
                 container('jnlp') {
                     script {
-                        withCredentials([usernamePassword(
-                            credentialsId: 'git-lab-key',
-                            usernameVariable: 'GIT_USER',
-                            passwordVariable: 'GIT_TOKEN')]) {
-                          sh '''
-                            git config user.email "jenkins-agent@example.com"
-                            git config user.name "Jenkins agent"
+                        def envName = ""
+                        if (env.BRANCH_NAME == 'develop') {
+                            envName = "dev"
+                        } else if (env.BRANCH_NAME == 'staging') {
+                            envName = "staging"
+                        } else if (env.BRANCH_NAME == 'main') {
+                            envName = "prod"
+                        } else {
+                            echo "Feature/Hotfix branch detected, skipping Helm update."
+                            envName = null
+                        }
 
-                            echo "Updating Helm values.yaml image tag to ${IMAGE_TAG}"
-                            ls -l gitops/weather-app/
-                            sed -i "s|digest:.*|digest: ${IMAGE_DIGEST#*@}|" gitops/weather-app/values.yaml
+                        if (envName) {
+                            echo "Updating Helm values for environment: ${envName}"
 
-                            # Push the changes bask to the repository
-                            git add weather-app/values.yaml
-                            git commit -m "Update weather image tag to ${IMAGE_TAG}"
-                            git push https://${GIT_USER}:${GIT_TOKEN}@gitlab.helen-tam.org/root/weather-app.git HEAD:main
-                          '''
-                       }
+                            sh """
+                                rm -rf ${GITOPS_DIR}
+                                git clone https://${GIT_CREDENTIALS}@github.com/Helen-Tam/gitops-weather-app.git ${GITOPS_DIR}
+                                cd ${GITOPS_DIR}
+                                git config user.email "jenkins@ci.local"
+                                git config user.name "Jenkins CI"
+
+                                cd weather-app
+                                yq eval '.image.tag = "${IMAGE_TAG}"' -i values-${envName}.yaml
+                                git add values-${envName}.yaml
+                                git commit -m "Update image tag to ${IMAGE_TAG} for ${envName} environment"
+                                git push
+                            """
+                        }
                     }
                 }
             }
         }
     }
+
 
     post {
         always {
