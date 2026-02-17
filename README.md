@@ -146,10 +146,10 @@ remotes/origin/production
 - Go to your repository on GitHub.
 - Click Settings → Rules → Add ruleset.
 
-🌿 2.1 Protect production (strictest)
-- Ruleset name: production
-- Bypass list: Repo admin + dev team
-- Branch name pattern: production
+🌿 2.1 Protect main (production)
+- Ruleset name: main
+- Bypass list: Repo admin
+- Branch name pattern: main
 - Enable:
   - ✅ Require a PR before merging -> Required approvals (at least 1, preferably 2-3)
   - ✅ Require status checks (can be empty for now)
@@ -159,10 +159,10 @@ remotes/origin/production
   
 👉 This ensures no direct prod changes
 
-🌿 2.2 Protect main (release-ready):
-- Ruleset name: main
+🌿 2.2 Protect staging (release-ready):
+- Ruleset name: staging
 - Bypass list: maintainers (release team)
-- Branch name pattern: main
+- Branch name pattern: staging
 - Enable:
   - ✅ Require a PR before merging -> Require approvals (at least 1, preferably 2)
   - ✅ Require status checks (can be empty for now)
@@ -191,5 +191,71 @@ remotes/origin/production
 | develop    | Integration       | PR required          |
 | main       | Release candidate | PR + approvals       |
 | production | Live              | PR + strict approval |
+
+
+👉 Stage-to-branch mapping:
+| Pipeline Stage                      | develop |   staging   |   main   | Purpose                                   |
+| ----------------------------------- | :-----: | :---------: | :------: | ----------------------------------------- |
+| Clone App Repo                      |    ✅    |      ✅      |     ✅    | Fetch application source code             |
+| Static Code Analysis (pylint)       |    ✅    |      ✅      |     ❌    | Code quality gate before promotion        |
+| TruffleHog Secret Scan              |    ✅    |      ✅      |     ✅    | Prevent leaked secrets                    |
+| Dependency Scan (Trivy FS + config) |    ✅    |      ✅      |     ✅    | Detect vulnerable dependencies            |
+| Build & Test Docker Image           |    ✅    |      ✅      |     ✅    | Build image and run smoke tests           |
+| Push Image                          |    ✅    |      ✅      |     ✅    | Publish image used by Helm                |
+| Sign Image (Cosign)                 |    ❌    |      ✅      |     ✅    | Supply-chain security for higher envs     |
+| Update GitOps Desired State         | ✅ (dev) | ✅ (staging) | ✅ (prod) | Update environment-specific desired state |
+
+
+🔍 CI/CD Pipeline Stage-by-Stage Explanation
+1. Clone App Repo:
+- Branches: develop, staging, main
+  - Uses Jenkins SCM checkout
+  - Provides a clean workspace for analysis and builds
+
+2. Pylint - Static Code Analysis:
+- Branches: develop, staging
+  - Runs pylint against the Python application to enforce consistent coding standards before promotion
+  - Enforces a defined quality score
+  - Skipped on main to avoid blocking hotfixes already validated earlier
+
+3. TruffleHog Secret Scan:
+- Branches: develop, staging, main
+  - Scans repository history and filesystem for leaked secrets
+  - Prevents credentials from reaching container images or GitOps repos
+
+4. Dependency Scan (Filesystem & Dockerfile):
+- Branches: develop, staging, main
+  - Scans project dependencies
+  - Scans Dockerfile for insecure patterns
+  - Detects vulnerable libraries early
+  - Shift-left security
+
+5. Build & Test Docker Image:
+- Branches: develop, staging, main
+  - Builds the Docker image
+  - Runs the container locally
+  - Performs a basic HTTP reachability test
+  - Ensures the image is runnable
+  - Prevents broken images from entering the registry
+
+6. Push Image:
+- Branches: develop, staging, main
+  - Pushes the image to Docker Hub
+  - Image tags are branch-aware: <branch>-<build-number>
+
+7. Sign Image (Conditional) with Cosign:
+- Branches: staging, main
+  - Signs the image by digest
+  - Skipped on develop to keep feedback fast
+
+8. Update GitOps Desired State:
+- Branches & Targets:
+  - develop → dev
+  - staging → staging
+  - main → prod
+- Clones the GitOps repository
+- Updates environment-specific values
+- Commits the new desired state
+
 
 
