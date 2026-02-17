@@ -1,4 +1,6 @@
-Project Name: "Flask weather app with GitLab Flow branching strategy"
+ ----------- Project Name: "Flask weather app with GitLab Flow branching strategy" -----------
+
+👉 Repo structure:
 
 ```text
 weather-app/
@@ -11,6 +13,7 @@ weather-app/
   └── README.md                  # Project documentation
 ```
 
+
 🌿 GitLab Flow on GitHub (Long-lived branches)
 
 🎯 Goal of this model:
@@ -20,21 +23,23 @@ weather-app/
 - Predictable CI/CD
 - Works very well with Jenkins + GitHub + ArgoCD
 
-✅ Long-lived branches (protected)
+🌿 Long-lived branches (protected)
 
 | Branch       | Meaning                           |
 | ------------ | --------------------------------- |
 | `develop`    | Integration branch (next release) |
-| `main`       | Release-ready / staging           |
-| `production` | What is live in prod              |
+| `staging`    | Release-ready / staging           |
+| `main`       | What is live in prod              |
 
 
-✅ Short-lived branches
+🌿 Short-lived branches
 
 | Branch      | Purpose                    |
 | ----------- | -------------------------- |
 | `feature/*` | New features               |
 | `hotfix/*`  | Emergency production fixes |
+
+
 
 🔁 Detailed Flow
 
@@ -52,64 +57,33 @@ git checkout -b feature/user-auth
   - Unit tests
   - No deployments yet
 
-2️⃣ Develop → Main (Release preparation):
-- When develop is stable: develop → main
+2️⃣ Develop → Staging (Release preparation):
+- When develop is stable: develop → staging
 - What this means:
   - Feature freeze
   - Release candidate
   - Final QA / security scans
 
-- CI/CD pipeline:
-
-| Branch  | Action                 |
-| ------- | ---------------------- |
-| develop | Build + tests          |
-| main    | Build + staging deploy |
-
-
-3️⃣ Main → Production (Release):
-- Once approved: main → production
+3️⃣ Staging → Main (Release):
+- Once approved: staging → main(prod)
 - Meaning:
   - This is an explicit release
   - Often requires manual approval
   - Tagged release is created here
 
-- CI/CD pipeline:
-
-| Branch     | Action         |
-| ---------- | -------------- |
-| production | Deploy to prod |
-
-
 4️⃣ Hotfix flow:
-- Hotfixes start from production, not develop !!!
+- Hotfixes start from main, not develop !!!
 - Branching:
-git checkout production
+git checkout main
 git checkout -b hotfix/payment-timeout
 - Merge sequence:
-hotfix → production
 hotfix → main
+hotfix → staging
 hotfix → develop
 - Why?
   - Fix goes live immediately
   - Prevents code divergence
   - Keeps all branches consistent
-
-🔐 Branch protection strategy (conceptual)
-
-| Branch     | Protection       |
-| ---------- | ---------------- |
-| develop    | PR required      |
-| main       | PR + CI required |
-| production | PR + approvals   |
-
-🧩 Environment mapping (mental model)
-
-| Branch     | Environment |
-| ---------- | ----------- |
-| develop    | Dev         |
-| main       | Staging     |
-| production | Prod        |
 
 
 
@@ -124,11 +98,11 @@ git checkout -b develop
 git push -u origin develop
 ```
 
-- 1.2 Create production branch (locally)
+- 1.2 Create staging branch (locally)
 ```
 git checkout main
-git checkout -b production
-git push -u origin production
+git checkout -b staging
+git push -u origin staging
 ```
 
 🔍 Verify branches: git branch -a
@@ -136,10 +110,10 @@ git push -u origin production
 ```
 main
 develop
-production
+staging
 remotes/origin/main
 remotes/origin/develop
-remotes/origin/production
+remotes/origin/staging
 ```
 
 🔐 Apply Branch Protection Rules (CRITICAL):
