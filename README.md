@@ -145,7 +145,7 @@ git push origin hotfix/critical-patch
 
 🌿 Step-by-step branching flow based on the logic in the pipeline:
 
-1. The Feature Stage (feature/*)
+👉 1. The Feature Stage (feature/*)
 - Trigger: Developer pushes code to a feature/xyz branch.
 - Pipeline Behavior: 
   - Security & Linting: Jenkins sees feature/* branch and runs Pylint and TruffleHog.
@@ -153,7 +153,7 @@ git push origin hotfix/critical-patch
   - Smoke Test: It creates a temporary pod in Kubernetes to see if the app actually starts.
 - GitOps: Pipeline explicitly skips the GitOps update stage because feature branches aren't meant for shared environments.
 
-2. The Integration Stage (develop)
+👉 2. The Integration Stage (develop)
 - Trigger: A Pull Request is merged from feature/* into develop.
 - Pipeline Behavior:
   - Security & Linting: Jenkins runs the same tests as the feature branch to ensure the merge didn't break anything.
@@ -162,7 +162,7 @@ git push origin hotfix/critical-patch
 
 - Result: ArgoCD sees the change and deploys to the Dev Environment.
 
-3. The Release Stage (release/*)
+👉 3. The Release Stage (release/*)
 - Trigger: When you commit/push to release/*
 - Pipeline Behavior:
   - The Check: "$BRANCH_NAME" =~ ^release/ evaluates to True.
@@ -171,7 +171,7 @@ git push origin hotfix/critical-patch
 
 - Result: ArgoCD sees the change and deploys to the Staging Environment.
 
-4. The Production Stage (main)
+👉 4. The Production Stage (main)
 - Trigger: The release/* branch is merged into main (after being approved).
 - Pipeline Behavior:
   - The Check: "$BRANCH_NAME" == "main" evaluates to True.
@@ -184,7 +184,7 @@ git push origin hotfix/critical-patch
 - Event: realease/* branch is also merged into develop.
 - Pipeline Behavior: This triggers the develop pipeline, ensuring the values-dev.yaml also gets updated.
 
-5. The Hotfix Stage (hotfix/*)
+👉 5. The Hotfix Stage (hotfix/*)
 - Trigger: Creation & Push of the hotfix/*
 - Pipeline Behavior: 
   - Security & Linting: Jenkins sees hotfix/* branch and runs Pylint and TruffleHog.
