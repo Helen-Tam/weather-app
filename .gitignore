@@ -32,7 +32,7 @@
 *.py[cod]
 *.log
 *.pre-commit-config.yaml
-back-up-readme-file.txt
+*/back-ups/
 
 # Docker
 *.log

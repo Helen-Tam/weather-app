@@ -6,9 +6,11 @@ pipeline {
 apiVersion: v1
 kind: Pod
 metadata:
+  namespace: jenkins-agents
   labels:
-    app: jenkins-docker-agent
+    app: jenkins-agent
 spec:
+  serviceAccountName: jenkins-agent
   containers:
   - name: jnlp
     image: jenkins/inbound-agent
@@ -17,33 +19,43 @@ spec:
       - name: workspace-volume
         mountPath: /home/jenkins/agent
 
-  - name: main-agent
-    image: idandror/jenkins-agent:latest
-    command:
-      - cat
+  - name: python-tools
+    image: python:3.11-slim
+    command: ["cat"]
     tty: true
     volumeMounts:
       - name: workspace-volume
         mountPath: /home/jenkins/agent
 
-  - name: docker
-    image: docker:24-dind
-    securityContext:
-      privileged: true
-    env:
-      - name: DOCKER_TLS_CERTDIR
-        value: ""
+  - name: kaniko
+    image: helentam93/jenkins-agents:kaniko-trivy-cosign
+    command: ["cat"]
+    tty: true
     volumeMounts:
-      - name: docker-graph
-        mountPath: /var/lib/docker
+      - name: workspace-volume
+        mountPath: /home/jenkins/agent
+      - name: kaniko-secret
+        mountPath: /kaniko/.docker
+      - name: cosign-key
+        mountPath: /kaniko/.cosign
+
+  - name: git-ops
+    image: alpine/k8s:1.32.12 # Includes kubectl, yq, and git
+    command: ["cat"]
+    tty: true
+    volumeMounts:
       - name: workspace-volume
         mountPath: /home/jenkins/agent
 
   volumes:
-    - name: workspace-volume
-      emptyDir: {}
-    - name: docker-graph
-      emptyDir: {}
+  - name: workspace-volume
+    emptyDir: {}
+  - name: kaniko-secret
+    secret:
+      secretName: dockerhub-creds
+  - name: cosign-key
+    secret:
+      secretName: cosign-key
 '''
         }
     }
@@ -51,13 +63,11 @@ spec:
     environment {
         GITOPS_REPO = "https://github.com/Helen-Tam/gitops-weather-app.git"
         GITOPS_DIR  = "gitops-weather-app"
+        GIT_CREDENTIALS = 'git-creds'
 
         DOCKER_REPO = "helentam93/weather"
         IMAGE_TAG   = "${env.BRANCH_NAME}-${env.BUILD_NUMBER}"
         DOCKER_IMAGE = "${DOCKER_REPO}:${IMAGE_TAG}"
-
-        DOCKER_HUB_CREDENTIALS = 'dockerhub-creds'
-        GIT_CREDENTIALS       = 'git-creds'
     }
 
     stages {
@@ -71,146 +81,151 @@ spec:
             }
         }
 
-        stage('Static Code Analysis') {
-            when {
-                anyOf {
-                    branch 'develop'
-                    branch 'staging'
-                }
-            }
-            steps {
-                container('main-agent') {
-                    sh '''
-                      echo "Running pylint on app.py..."
-                      SCORE=$(pylint app.py | awk '/rated at/ {print $7}' | cut -d'/' -f1)
-                      echo "Pylint score: $SCORE"
-                      (( $(echo "$SCORE < 7.0" | bc -l) )) && exit 1 || echo "Score OK"
-                    '''
-                }
-            }
-        }
 
-        stage('TruffleHog Secret Scan') {
-            steps {
-                container('main-agent') {
-                  sh '''
-                      echo "Create virtual environment..."
-                      python3 -m venv venv
-                      . venv/bin/activate
+        stage('Security & Linting') {
+            parallel {
 
-                      echo "Installing truffleHog..."
-                      pip install --upgrade pip
-                      pip install truffleHog
+                stage('Static Code Analysis') {
+                    when { 
+                        anyOf { branch 'feature/*'; branch 'develop'; branch 'hotfix/*' } 
+                    }
+                    steps {
+                        container('python-tools') {
+                            sh '''
+                                echo "Installing pylint..."
+                                pip install --upgrade pip
+                                pip install pylint
 
-                      echo "Running secret scan..."
-                      trufflehog discover --repo_path . --json --max_depth 10
-                  '''
-                }
-            }
-        }
+                                echo "Running pylint on app.py..."
+                                SCORE=$(pylint app.py | awk '/rated at/ {print $7}' | cut -d'/' -f1)
 
-        stage('Dependency Scan for Python') {
-            steps {
-                container('docker') {
-                    sh '''
-                        echo "Running the dependency file-system scan..."
-                        docker run --rm -v $(pwd):/src aquasec/trivy:latest fs \
-                          --exit-code 1 --severity CRITICAL /src
-
-                        echo "Scanning Dockerfile ..."
-                        docker run --rm -v $(pwd):/src aquasec/trivy:latest config \
-                          --exit-code 1 --severity CRITICAL /src/Dockerfile
-                    '''
-                }
-            }
-        }
-
-        stage('Build and Test Docker Image') {
-            when {
-                anyOf {
-                    branch 'develop'
-                    branch 'staging'
-                    branch 'main'
-                }
-            }
-            steps {
-                container('docker') {
-                    sh '''
-                        echo "Waiting for Docker daemon..."
-                        until docker info >/dev/null 2>&1; do sleep 2; done
-
-                        echo "Building Docker image..."
-                        docker build -t $DOCKER_IMAGE .
-
-                        echo "Scanning Built Image for OS Vulnerabilities..."
-                        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-                            aquasec/trivy:latest image \
-                            --exit-code 1 --severity CRITICAL $DOCKER_IMAGE
-
-                        echo "Running container for test..."
-                        docker run -d --name test-container -p 8000:8000 $DOCKER_IMAGE
-                        sleep 5
-
-                        echo "Testing application reachability..."
-                        if curl -f http://localhost:8000; then
-                            echo "Reachability test PASSED"
-                        else
-                            echo "Reachability test FAILED"
-                            exit 1
-                        fi
-
-                        echo "Stopping the test container..."
-                        docker stop test-container
-                        docker rm test-container
-                    '''
-                }
-            }
-        }
-
-        stage('Push and Sign Image') {
-            when {
-                anyOf {
-                    branch 'develop'
-                    branch 'staging'
-                    branch 'main'
-                }
-            }
-            steps {
-                container('docker') {
-                    withCredentials([usernamePassword(
-                        credentialsId: "${DOCKER_HUB_CREDENTIALS}", 
-                        usernameVariable: 'DOCKER_USER', 
-                        passwordVariable: 'DOCKER_PASS'),
-                        file(credentialsId: 'cosign-key', variable: 'COSIGN_KEY_FILE')
-                    ]) {
-                        sh '''
-                            echo "Logging into Docker Hub..."
-                            echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-
-                            echo "Pushing Image..."
-                            docker push $DOCKER_IMAGE
-
-                            echo "Identifying Image Digest..."
-                            IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $DOCKER_IMAGE)
-                            echo $IMAGE_DIGEST > image-digest.txt
-                            echo "Image digest: $IMAGE_DIGEST"
-
-                            echo "Signing Digest: $IMAGE_DIGEST"
-
-                            if [ "$BRANCH_NAME" != "develop" ]; then
-                                echo "Installing Cosign..."
-                                curl -LO https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
-                                chmod +x cosign-linux-amd64
-                                mv cosign-linux-amd64 /usr/local/bin/cosign
-
-                                echo "Signing image digest..."
-                                cosign sign --key $COSIGN_KEY_FILE --tlog-upload=false $IMAGE_DIGEST
-                            else
-                                echo "Skipping image signing for develop"
-                            fi
-                        '''
+                                echo "Pylint score: $SCORE"
+                                (( $(echo "$SCORE < 7.0" | bc -l) )) && exit 1 || echo "Score OK"
+                            '''
+                        }
                     }
                 }
+
+                stage('Secret Scan (TruffleHog)') {
+                    when { 
+                        not { branch 'main' } 
+                    }
+                    steps {
+                        container('python-tools') {
+                            sh '''
+                                python3 -m venv venv
+                                . venv/bin/activate
+                                pip install --upgrade pip
+                                pip install truffleHog
+
+                                echo "Running secret scan..."
+                                trufflehog discover --repo_path . --json --max_depth 10
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Pre-Build Dependency Scan (Trivy)') {
+            when {
+                not { branch 'main' }
+            }
+            steps {
+                container('kaniko') {
+                    sh '''
+                        echo "Running the dependency file-system scan..."
+                        trivy fs --exit-code 1 --severity CRITICAL requirements.txt
+
+                        echo "Scanning Dockerfile ..."
+                        trivy config --exit-code 1 --severity CRITICAL Dockerfile
+                    '''
+                }
+            }
+        }
+
+        stage('Build and Test Docker Image (Export the image as archive, do not push it yet)') {
+            steps {
+                container('kaniko') {
+                    sh '''
+                        echo "Building Docker image with Kaniko..."
+                        /kaniko/executor \
+                          --dockerfile=Dockerfile \
+                          --context=$WORKSPACE \
+                          --tarPath=/home/jenkins/agent/app-image.tar
+
+                        echo "Scanning Built Image for OS Vulnerabilities..."
+                        trivy image --input /home/jenkins/agent/app-image.tar --exit-code 1 --severity CRITICAL $DOCKER_IMAGE
+                    '''🔍
+                }
+            }
+        }
+
+        stage('Smoke test') {
+            steps {
+                container('git-ops') {
+                    sh '''
+                        echo "Creating test Pod..."
+                        kubectl run test-pod --image=$DOCKER_IMAGE --restart=Never --namespace=jenkins-agents
+                        kubectl wait --for=condition=Ready pod/test-pod --timeout=30s --namespace=jenkins-agents
+
+                        echo "Testing application reachability..."
+                        if kubectl exec -n jenkins-agents test-pod -- curl -f http://localhost:8000; then
+                            echo "Reachability test PASSED"
+                        else🔍
+                             echo "Reachability test FAILED"
+                             kubectl logs test-pod --namespace=jenkins-agents || true
+                             exit 1
+                        fi
+
+                        echo "Removing the test Pod..."
+                        kubectl delete pod test-pod --namespace=jenkins-agents
+                    '''
+                }
+            }
+        }
+
+        stage('Push and Sign the Docker Image') {
+            steps {
+                container('kaniko') {
+                    sh '''
+                        echo "Building Docker image with Kaniko..."
+                        /kaniko/executor \
+                          --dockerfile=Dockerfile \
+                          --context=$WORKSPACE \
+                          --destination=$DOCKER_IMAGE \
+                          --docker-config=/kaniko/.docker \
+                          --digest-file=/home/jenkins/agent/image-digest.txt
+
+                        # Sign image only for main and release/*
+                        if [[ "$BRANCH_NAME" == "main" || "$BRANCH_NAME" =~ ^release/ ]]; then
+                            echo "Identifying Image Digest..."
+                            IMAGE_DIGEST=$(cat /home/jenkins/agent/image-digest.txt)
+                            echo "Image digest: $IMAGE_DIGEST"
+                            echo "Signing image with Cosign..."
+
+                            cosign sign --key /kaniko/.cosign/cosign.key $IMAGE_DIGEST
+                        else
+                            echo "Skipping image signing for branch $BRANCH_NAME"
+                        fi                        
+                    '''
+                }
+            }
+        }
+
+        stage('Hotfix Verification Gate') {
+            when { 
+                branch pattern: "hotfix/.*", comparator: "REGEXP" 
+            }
+            steps {
+                // Notify the team that an emergency fix is waiting
+                slackSend(
+                    channel: 'devops-alerts',
+                    color: 'warning',
+                    message: "🚨 *HOTFIX PENDING:* Branch `${env.BRANCH_NAME}` is ready for verification.\nReview the build here: <${env.BUILD_URL}|View Jenkins Job> and click 'Proceed' to deploy to Staging."
+                )
+                
+                input message: "Deploy this hotfix to STAGING for verification?", ok: "Deploy to Staging"
             }
         }
 
@@ -218,60 +233,68 @@ spec:
             when {
                 anyOf {
                     branch 'develop'
-                    branch 'staging'
                     branch 'main'
+                    branch pattern: 'release/.*', comparator: 'REGEXP'
+                    branch pattern: 'hotfix/.*', comparator: 'REGEXP'
                 }
             }
             steps {
-                container('jnlp') {
+                container('git-ops') {
                     script {
                         def envName = ""
-                        if (env.BRANCH_NAME == 'develop') {
+                        def valuesFile = ""
+                        if (env.BRANCH_NAME == "develop") {
                             envName = "dev"
-                        } else if (env.BRANCH_NAME == 'staging') {
+                            valuesFile = "values-dev.yaml"
+                            gitBranch = "develop"
+                        } else if (env.BRANCH_NAME.startsWith("release/")) {
                             envName = "staging"
-                        } else if (env.BRANCH_NAME == 'main') {
+                            valuesFile = "values-staging.yaml"
+                            gitBranch = "main"    // release changes go to main branch in GitOps
+                        } else if (env.BRANCH_NAME.startsWith("hotfix")) {
+                            envName = "hotfix-staging"
+                            valuesFile = "values-staging.yaml"
+                            gitBranch = "main"    // hotfix changes go to main branch in GitOps
+                        } else if (env.BRANCH_NAME == "main") {
                             envName = "prod"
+                            valuesFile = "values-prod.yaml"
+                            gitBranch = "main"
                         } else {
-                            echo "Feature/Hotfix branch detected, skipping Helm update."
-                            envName = null
+                            echo "Branch ${env.BRANCH_NAME} does not deploy to GitOps"
+                            return 
                         }
+                        
+                        echo "Targeting Environment: ${envName} (using ${valuesFile})"
 
-                        if (envName) {
-                            echo "Updating Helm values for environment: ${envName}"
+                        withCredentials([usernamePassword(
+                            credentialsId: "${GIT_CREDENTIALS}",
+                            usernameVariable: 'GIT_USER',
+                            passwordVariable: 'GIT_TOKEN'
+                        )]) {
+                            sh """
+                                rm -rf ${GITOPS_DIR}
+                                git clone -b ${gitBranch} https://${GIT_USER}:${GIT_TOKEN}@github.com/Helen-Tam/gitops-weather-app.git ${GITOPS_DIR}
+                                cd ${GITOPS_DIR}/weather-app
 
-                            withCredentials([usernamePassword(
-                                credentialsId: "${GIT_CREDENTIALS}",
-                                usernameVariable: 'GIT_USER',
-                                passwordVariable: 'GIT_TOKEN'
-                            )]) {
-                                sh """
-                                    rm -rf ${GITOPS_DIR}
-                                    git clone https://${GIT_USER}:${GIT_TOKEN}@github.com/Helen-Tam/gitops-weather-app.git ${GITOPS_DIR}
-                                    cd ${GITOPS_DIR}
-                                    git config user.email "jenkins@ci.local"
-                                    git config user.name "Jenkins CI"
+                                git config user.email "jenkins@ci.local"
+                                git config user.name "Jenkins CI"
 
-                                    cd weather-app
+                                if [ "$envName" = "dev" ]; then
+                                    yq e '.image.tag = "${IMAGE_TAG}" | .image.digest = ""' -i ${valuesFile}
+                                else
+                                    DIGEST=\$(cat \$WORKSPACE/image-digest.txt | cut -d@ -f2)
+                                    yq e '.image.digest = "'$DIGEST'" | .image.tag = ""' -i ${valuesFile}
+                                fi
 
-                                    if [ "$BRANCH_NAME" = "develop" ]; then
-                                        echo "Updating tag for dev"
-                                        yq e '.image.tag = "${IMAGE_TAG}" | .image.digest = ""' -i values-${envName}.yaml
-                                    else
-                                        echo "Updating digest for ${envName}"
-                                        DIGEST=$(cut -d@ -f2 ../../image-digest.txt)
-                                        yq e '.image.digest = "'$DIGEST'" | .image.tag = ""' -i values-${envName}.yaml
-                                    fi
+                                git add ${valuesFile}
 
-                                    git add values-${envName}.yaml
-                                    if git diff --cached --quiet; then
-                                        echo "No GitOps changes detected; skipping commit."
-                                    else
-                                        git commit -m "Update image reference for ${envName}"
-                                        git push origin main
-                                    fi
-                                """
-                            }
+                                if git diff --cached --quiet; then
+                                    echo "No GitOps changes detected; skipping commit."
+                                else
+                                    git commit -m "Update ${envName} image to ${IMAGE_TAG}"
+                                    git push origin ${gitBranch}
+                                fi
+                            """
                         }
                     }
                 }
@@ -282,10 +305,10 @@ spec:
 
     post {
         always {
-           container('docker') {
+           container('git-ops') {
               sh """
-                echo "Cleaning up test container if it exists..."
-                docker rm -f test-container || true
+                echo "Cleaning up ephemeral test pod if it exists..."
+                kubectl delete pod test-pod --namespace=jenkins-agents || true
               """
            }
         }
@@ -307,3 +330,5 @@ spec:
         }
     }
 }
+
+
