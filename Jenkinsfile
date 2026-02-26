@@ -28,7 +28,7 @@ spec:
         mountPath: /home/jenkins/agent
 
   - name: kaniko
-    image: helentam93/jenkins-agents:kaniko-trivy-cosign
+    image: helentam93/jenkins-agents:kaniko-trivy-cosign    
     command: ["cat"]
     tty: true
     volumeMounts:
@@ -218,7 +218,7 @@ spec:
                 branch pattern: "hotfix/.*", comparator: "REGEXP" 
             }
             steps {
-                // Notify the team that an emergency fix is waiting
+                // Slack Notify the team that an emergency fix is waiting
                 slackSend(
                     channel: 'devops-alerts',
                     color: 'warning',
