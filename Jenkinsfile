@@ -6,7 +6,7 @@ pipeline {
 apiVersion: v1
 kind: Pod
 metadata:
-  namespace: jenkins-agents
+  namespace: jenkins
   labels:
     app: jenkins-agent
 spec:
@@ -102,6 +102,7 @@ spec:
                                 echo "Pylint score: $SCORE"
                                 (( $(echo "$SCORE < 7.0" | bc -l) )) && exit 1 || echo "Score OK"
                             '''
+                        kubectl delete pod test-pod --namespace=jenkins-agent
                         }
                     }
                 }
@@ -150,6 +151,7 @@ spec:
                     sh '''
                         echo "Building Docker image with Kaniko..."
                         /kaniko/executor \
+                        kubectl delete pod test-pod --namespace=jenkins-agent
                           --dockerfile=Dockerfile \
                           --context=$WORKSPACE \
                           --tarPath=/home/jenkins/agent/app-image.tar
