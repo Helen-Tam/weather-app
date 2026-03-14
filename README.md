@@ -7,9 +7,10 @@ weather-app/
   ├── static/                    # Static files
   ├── templates/                 # Jinja2 / Flask templates
   ├── app.py                     # Main application code
+  ├── requirements.txt           # Python dependencies
   ├── Dockerfile                 # Docker image definition
   ├── Jenkinsfile                # CI/CD pipeline
-  ├── requirements.txt           # Python dependencies
+  ├── jenkins-agent-pod.yaml     # Jenkins agent Pod definition to run a CI pipeline in the EKS Cluster 
   └── README.md                  # Project documentation
 ```
 
@@ -122,6 +123,7 @@ git push origin hotfix/critical-patch
         Dockerfile: Scans Dockerfile for security misconfigurations (e.g., missing USER instructions).
 
     4. Kaniko Build: Build the image rootlessly in your Jenkins Pod.
+       Push the image to Docker Hub repo (depending on the working branch).
        Post-Build Scan (Trivy): Scans the final image layers for OS-level vulnerabilities (CVEs) found in the base image.
 
     5. Integration / Reachability Test:
@@ -130,8 +132,7 @@ git push origin hotfix/critical-patch
         Cleanup (delete) the test pod.
 
     6. Push & Sign:
-        Push to Docker Hub.
-        Sign the image with Cosign (for main and release/*).
+        Sign the image with Cosign (for main and hotfix/* and release/*).
 
     7. Update GitOps (ArgoCD Promotion):
         Update the specific values-*.yaml file in gitops-repo/weather-app/env/ using yq.
@@ -192,8 +193,8 @@ git push origin hotfix/critical-patch
   - Smoke Test: It creates a temporary pod in Kubernetes to see if the app actually starts.
   - Hotfix Verification Gate: The pipeline is paused and a notification message is send to Slack to verify the deployment to the staging environment.
   - Manual Approve: Go to the Jenkins UI and approve the deploy.
-- GitOps Trigger: Jenkins identifies env.BRANCH_NAME == "hotfix/", sets envName = "hotfix-staging", and updates values-staging.yaml.
-- Result: ArgoCD sees the change and deploys to the Staging Environment to run needed tests before merging hotfix/ to main.
+- GitOps Trigger: Jenkins identifies env.BRANCH_NAME == "hotfix/", sets envName = "hotfix-staging", and updates values-hotfix.yaml.
+- Result: ArgoCD sees the change and deploys to the Hotfix Environment to run needed tests before merging hotfix/ to main.
 
 - Trigger: The Hotfix PR is merged into main.
 - Pipeline Behavior:
